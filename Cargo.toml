@@ -1,0 +1,14 @@
+[package]
+name = "command-unquoted"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.57"
+description = "std::process::Command wrapper with a nicer Debug implementation"
+repository = "https://github.com/iliana/command-unquoted"
+license = "MPL-2.0"
+keywords = ["command", "debug", "display", "fmt"]
+categories = ["value-formatting"]
+resolver = "2"
+
+[dependencies]
+shell-words = "1.0.0"
