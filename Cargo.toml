@@ -9,6 +9,3 @@ license = "MPL-2.0"
 keywords = ["command", "debug", "display", "fmt"]
 categories = ["value-formatting"]
 resolver = "2"
-
-[dependencies]
-shell-words = "1.0.0"
