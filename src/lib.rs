@@ -47,6 +47,7 @@ pub struct Unquoted<'a>(pub &'a Command);
 
 impl Debug for Unquoted<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "`")?;
         for (name, value_opt) in self.0.get_envs() {
             if let Some(value) = value_opt {
                 write!(f, "{}={} ", Quoted(name), Quoted(value))?;
@@ -66,7 +67,7 @@ impl Debug for Unquoted<'_> {
         for arg in self.0.get_args() {
             write!(f, " {}", Quoted(arg))?;
         }
-        Ok(())
+        write!(f, "`")
     }
 }
 
@@ -93,7 +94,11 @@ impl Display for Quoted<'_> {
             || s.contains(
                 [
                     '|', '&', ';', '<', '>', '(', ')', ' ', '\t', '\n', // POSIX-1.2018
-                    '*', '?', '[', '#', '~', '=', '%', // POSIX-1.2018
+                    '*', '?', '[', '#', '~', '%', // POSIX-1.2018
+                    // Technically '=' is in the above list of "may need
+                    // to be quoted under certain circumstances" but those
+                    // circumstances are generally variable assignments or are
+                    // otherwise covered by other characters here.
                     ']', // Bash glob patterns
                     '{', '}', // Bash brace expansion
                 ]
@@ -170,7 +175,6 @@ mod tests {
         assert_q!("meow}", "'meow}'");
         assert_q!("#meow", "'#meow'");
         assert_q!("~meow", "'~meow'");
-        assert_q!("=meow", "'=meow'");
         assert_q!("%meow", "'%meow'");
         assert_q!("@meow", "'@meow'");
         assert_q!("!meow", "'!meow'");
@@ -197,7 +201,6 @@ mod tests {
         assert_q!("meow's}", r#""meow's}""#);
         assert_q!("#meow's", r##""#meow's""##);
         assert_q!("~meow's", r#""~meow's""#);
-        assert_q!("=meow's", r#""=meow's""#);
         assert_q!("%meow's", r#""%meow's""#);
         // single-quote with special characters that _do_ have special meaning
         // inside double quotes: use single quotes
@@ -217,16 +220,16 @@ mod tests {
 
     #[test]
     fn program_only() {
-        assert_u!(Command::new("program"), "program");
-        assert_u!(Command::new("programn't"), r#""programn't""#);
-        assert_u!(Command::new("case"), "'case'");
+        assert_u!(Command::new("program"), "`program`");
+        assert_u!(Command::new("programn't"), r#"`"programn't"`"#);
+        assert_u!(Command::new("case"), "`'case'`");
     }
 
     #[test]
     fn args() {
         assert_u!(
             Command::new("program").args(["arg1", "arg b", "arg'c", r#"arg"d"#, "arg$e"]),
-            r#"program arg1 'arg b' "arg'c" 'arg"d' 'arg$e'"#
+            r#"`program arg1 'arg b' "arg'c" 'arg"d' 'arg$e'`"#
         );
     }
 
@@ -237,7 +240,7 @@ mod tests {
                 .env("BLAH1", "blah")
                 .env("BLAH2", "\"blah's blah\"")
                 .env("BLAH3", r#"\"blah's blah\""#),
-            r#"BLAH1=blah BLAH2='"blah'\''s blah"' BLAH3='\"blah'\''s blah\"' program"#
+            r#"`BLAH1=blah BLAH2='"blah'\''s blah"' BLAH3='\"blah'\''s blah\"' program`"#
         );
     }
 }
