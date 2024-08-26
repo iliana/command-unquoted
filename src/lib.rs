@@ -6,7 +6,7 @@
 
 //! command-unquoted provides [a wrapper struct][Unquoted] for
 //! [`std::process::Command`] that provides a nicer-looking [`Debug`]
-//! implementation and is useful for user-facing error messages.
+//! implementation and is useful for logs or user-facing error messages.
 //!
 //! Instead of quoting all strings (as done in the Unix `Command`
 //! implementation), quotes are added only where necessary.
@@ -50,7 +50,7 @@ impl Debug for Unquoted<'_> {
         write!(f, "`")?;
         for (name, value_opt) in self.0.get_envs() {
             if let Some(value) = value_opt {
-                write!(f, "{}={} ", Quoted(name), Quoted(value))?;
+                write!(f, "{}={} ", Word(name), Word(value))?;
             }
         }
 
@@ -61,25 +61,28 @@ impl Debug for Unquoted<'_> {
         {
             write!(f, "'{}'", s)?;
         } else {
-            write!(f, "{}", Quoted(program))?;
+            write!(f, "{}", Word(program))?;
         }
 
         for arg in self.0.get_args() {
-            write!(f, " {}", Quoted(arg))?;
+            write!(f, " {}", Word(arg))?;
         }
         write!(f, "`")
     }
 }
 
-struct Quoted<'a>(&'a OsStr);
+struct Word<'a>(&'a OsStr);
 
-impl Display for Quoted<'_> {
+impl Display for Word<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.0.is_empty() {
+        // `OsStr::is_empty` calls `to_string_lossy`, so get this out of the way
+        // at the start.
+        let s = self.0.to_string_lossy();
+
+        if s.is_empty() {
             return write!(f, "''");
         }
 
-        let s = self.0.to_string_lossy();
         let has_single_quote = s.contains('\'');
         let has_special_within_double = s.contains(
             [
@@ -91,6 +94,8 @@ impl Display for Quoted<'_> {
         );
         let has_special = has_single_quote
             || has_special_within_double
+            || s.contains(char::is_whitespace)
+            || s.contains(char::is_control)
             || s.contains(
                 [
                     '|', '&', ';', '<', '>', '(', ')', ' ', '\t', '\n', // POSIX-1.2018
@@ -134,7 +139,7 @@ impl Display for Quoted<'_> {
 mod tests {
     use std::{ffi::OsStr, process::Command};
 
-    use crate::{Quoted, Unquoted, RESERVED_COMMAND_WORDS};
+    use crate::{Unquoted, Word, RESERVED_COMMAND_WORDS};
 
     #[test]
     fn command_words_sorted() {
@@ -143,16 +148,24 @@ mod tests {
 
     macro_rules! assert_q {
         ($left:expr, $right:expr) => {
-            assert_eq!(Quoted(OsStr::new($left)).to_string(), $right)
+            assert_eq!(Word(OsStr::new($left)).to_string(), $right)
         };
     }
 
     #[test]
     fn quoted() {
         assert_q!("", r"''");
+        assert_q!("meow", r"meow");
+        assert_q!("にゃー", "にゃー");
+        assert_q!("ｍｅｏｗ", "ｍｅｏｗ");
+
+        // whitespace
+        assert_q!("meow meow", "'meow meow'");
+        assert_q!("meow\tmeow", "'meow\tmeow'");
+        assert_q!("meow\nmeow", "'meow\nmeow'");
+        assert_q!("ｍｅｏｗ　ｍｅｏｗ", "'ｍｅｏｗ　ｍｅｏｗ'");
 
         // special characters, generally: use single quotes
-        assert_q!("meow", r"meow");
         assert_q!("|meow", "'|meow'");
         assert_q!("meow&", "'meow&'");
         assert_q!("meow;", "'meow;'");
@@ -164,9 +177,6 @@ mod tests {
         assert_q!("`meow`", "'`meow`'");
         assert_q!(r"\meow", r"'\meow'");
         assert_q!(r#""meow""#, r#"'"meow"'"#);
-        assert_q!("meow meow", "'meow meow'");
-        assert_q!("meow\tmeow", "'meow\tmeow'");
-        assert_q!("meow\nmeow", "'meow\nmeow'");
         assert_q!("meow*", "'meow*'");
         assert_q!("meow?", "'meow?'");
         assert_q!("[meow", "'[meow'");
